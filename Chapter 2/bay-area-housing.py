@@ -17,8 +17,8 @@ from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 from sklearn.tree import DecisionTreeRegressor
-
-print("test")
+from sklearn.model_selection import cross_val_score
+from sklearn.ensemble import RandomForestRegressor
 
 """
 Configure the paths for getting and storing data.
@@ -62,6 +62,8 @@ print("\n\n")
 print(housing["ocean_proximity"].value_counts())  # See what the categories are
 print("\n\n")
 print(housing.describe())
+
+
 # housing.hist(bins=50, figsize=(10,10))
 # plt.show()
 
@@ -95,7 +97,7 @@ def test_set_check(identifier, test_ratio):
     # crc32 is a hash function. To be honest I don't know why this reliably produces a
     # perfect split everytime. It seems like this should produce varying results within
     # a few percentage points of the train test split...
-    return crc32(np.int64(identifier)) & 0xffffffff < test_ratio * 2**32
+    return crc32(np.int64(identifier)) & 0xffffffff < test_ratio * 2 ** 32
 
 
 def split_train_test_by_id(data, test_ratio, id_col):
@@ -142,7 +144,7 @@ housing = strat_train_set.copy()
 
 # Plot the median house value and population density
 housing.plot(kind="scatter", x="longitude", y="latitude", alpha=0.1,  # alpha=0.1 lets you see density
-             s=housing["population"]/100, label="population", figsize=(10, 7),
+             s=housing["population"] / 100, label="population", figsize=(10, 7),
              c="median_house_value", cmap=plt.get_cmap("jet"), colorbar=True,  # Color map doesn't work (??)
              )
 plt.legend()
@@ -237,7 +239,6 @@ num_pipeline = Pipeline([
     ("std_scaler", StandardScaler())  # Feature scaling
 ])
 
-
 num_attributes = list(housing_num)
 cat_attributes = ["ocean_proximity"]
 
@@ -284,5 +285,46 @@ tree_reg.fit(housing_prepared, housing_labels)
 
 housing_predictions = tree_reg.predict(housing_prepared)
 tree_mse = mean_squared_error(housing_labels, housing_predictions)
-tree_rmse = np.sqrt(tree_mse)
+tree_rmse = np.sqrt(tree_mse)  # The RMSE is 0. This is likely because the model is very overfit
 print(tree_rmse)
+
+scores = cross_val_score(tree_reg, housing_prepared, housing_labels,
+                         scoring="neg_mean_squared_error", cv=10)
+tree_rmse_scores = np.sqrt(-scores)
+
+
+def display_scores(scores):
+    print("Scores: ", scores)
+    print("Mean: ", scores.mean())
+    print("Standard Dev:", scores.std())
+    print("\n\n")
+
+
+display_scores(tree_rmse_scores)
+
+lin_scores = cross_val_score(lin_reg, housing_prepared, housing_labels,
+                             scoring="neg_mean_squared_error", cv=10)
+lin_rmse_scores = np.sqrt(-lin_scores)
+
+display_scores(lin_rmse_scores)
+
+"""
+Here we use cross validation to really assess how the models are doing. This sklearn function
+splits the training data into 10 folds. It trains the model on 9 of those 10 folds, and then 
+validates it on the remaining fold. It does this for the other 9 folds as well.
+
+Using cross-validation, we can see that the decision tree doesn't look so good anymore! It was
+overfitting so badly, it actually did worse than the regression!
+"""
+forest_reg = RandomForestRegressor()
+forest_reg.fit(housing_prepared, housing_labels)
+housing_predictions = forest_reg.predict(housing_prepared)
+forest_mse = mean_squared_error(housing_labels, housing_predictions)
+forest_rmse = np.sqrt(tree_mse)
+print(forest_rmse)
+
+forest_scores = cross_val_score(forest_reg, housing_prepared, housing_labels,
+                                scoring="neg_mean_squared_error", cv=10)
+forest_rmse_scores = np.sqrt(-forest_scores)
+display_scores(forest_rmse_scores)
+# Using a RandomForest we get our best score yet! But it takes FOREVER to run. Welcome to ML.
