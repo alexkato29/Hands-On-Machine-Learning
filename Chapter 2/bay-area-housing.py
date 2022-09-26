@@ -19,6 +19,8 @@ from sklearn.metrics import mean_squared_error
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.model_selection import cross_val_score
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import GridSearchCV
+from scipy import stats
 
 """
 Configure the paths for getting and storing data.
@@ -316,6 +318,10 @@ validates it on the remaining fold. It does this for the other 9 folds as well.
 Using cross-validation, we can see that the decision tree doesn't look so good anymore! It was
 overfitting so badly, it actually did worse than the regression!
 """
+
+"""
+HUGE Note: the following lines will eat your computer. Do not run unless you have a few minutes.
+"""
 forest_reg = RandomForestRegressor()
 forest_reg.fit(housing_prepared, housing_labels)
 housing_predictions = forest_reg.predict(housing_prepared)
@@ -328,3 +334,45 @@ forest_scores = cross_val_score(forest_reg, housing_prepared, housing_labels,
 forest_rmse_scores = np.sqrt(-forest_scores)
 display_scores(forest_rmse_scores)
 # Using a RandomForest we get our best score yet! But it takes FOREVER to run. Welcome to ML.
+
+"""
+These models are great, but maybe some different hyperparameters would work better than others.
+Scikit has ways to test all hyperparameters we want. Grid Search allows you to tell scikit which
+hyperparameters to test and with what values, and it does all the combinations for you. It will
+tell you what params best suite your model.
+"""
+param_grid = [
+    {'n_estimators': [3, 10, 30], 'max_features': [2, 4, 6, 8]},
+    {'bootstrap': [False], 'n_estimators': [3, 10], 'max_features': [2, 3, 4]}
+]
+
+forest_reg = RandomForestRegressor()
+grid_search = GridSearchCV(forest_reg, param_grid, cv=5,
+                           scoring="neg_mean_squared_error",
+                           return_train_score=True)
+grid_search.fit(housing_prepared, housing_labels)
+crossval_results = grid_search.cv_results_
+for mean_score, params in zip(crossval_results["mean_test_score"], crossval_results["params"]):
+    print(np.sqrt(-mean_score), params)
+
+# Finally, we can test the model
+final_model = grid_search.best_estimator_
+
+X_test = strat_test_set.drop("median_house_value", axis=1)
+y_test = strat_test_set["median_house_value"].copy()
+
+X_test_prepared = full_pipeline.transform(X_test)
+
+final_predictions = final_model.predict(X_test_prepared)
+
+final_mse = mean_squared_error(y_test, final_predictions)
+final_rmse = np.sqrt(final_mse)
+
+# Generate a 95% confidence interval for the generalization error
+confidence = 0.95
+squared_errors = (final_predictions - y_test) ** 2
+np.sqrt(stats.t.interval(confidence, len(squared_errors - 1),
+                         loc=squared_errors.mean(),
+                         scale=stats.sem(squared_errors)))
+
+
